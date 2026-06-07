@@ -2,8 +2,6 @@
 
 Predicting credit card default using the UCI Credit Card Default dataset (30,000 clients, 24 features).
 
-Built as a portfolio project for the **BCP Data Scientist** role, demonstrating end-to-end ML pipeline skills relevant to banking credit risk.
-
 ## Dataset
 
 - **Source:** [UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients)
@@ -14,15 +12,15 @@ Built as a portfolio project for the **BCP Data Scientist** role, demonstrating 
 
 ## Tech Stack
 
-| Component | Tool |
-|-----------|------|
-| Language | Python 3.12 |
-| Package Manager | uv |
-| ML Frameworks | scikit-learn, XGBoost, LightGBM |
-| Imbalance Handling | imbalanced-learn (SMOTE) |
-| Interpretability | SHAP |
-| Visualization | matplotlib, seaborn |
-| Notebooks | Jupyter |
+| Component          | Tool                            |
+| ------------------ | ------------------------------- |
+| Language           | Python 3.12                     |
+| Package Manager    | uv                              |
+| ML Frameworks      | scikit-learn, XGBoost, LightGBM |
+| Imbalance Handling | imbalanced-learn (SMOTE)        |
+| Interpretability   | SHAP                            |
+| Visualization      | matplotlib, seaborn             |
+| Notebooks          | Jupyter                         |
 
 ## Project Structure
 
@@ -52,22 +50,22 @@ credit-risk-project/
 
 ### Model Comparison
 
-| Model | CV AUC (5-fold) | Test AUC | Gini | KS Statistic |
-|-------|-----------------|----------|------|-------------|
-| Logistic Regression | 0.7671 | 0.7450 | 0.3816 | 0.3929 |
+| Model                   | CV AUC (5-fold)  | Test AUC         | Gini             | KS Statistic     |
+| ----------------------- | ---------------- | ---------------- | ---------------- | ---------------- |
+| Logistic Regression     | 0.7671           | 0.7450           | 0.3816           | 0.3929           |
 | **Random Forest** | **0.8636** | **0.7729** | **0.4251** | **0.4145** |
-| XGBoost | 0.9301 | 0.7607 | 0.4061 | 0.3954 |
-| LightGBM | 0.9344 | 0.7659 | 0.4141 | 0.3951 |
+| XGBoost                 | 0.9301           | 0.7607           | 0.4061           | 0.3954           |
+| LightGBM                | 0.9344           | 0.7659           | 0.4141           | 0.3951           |
 
 **Best model: Random Forest** (Test AUC: 0.7729, Gini: 0.4251, KS: 0.4145)
 
 ### Classification Report (Random Forest)
 
-| Class | Precision | Recall | F1-Score |
-|-------|-----------|--------|----------|
-| No Default | 0.88 | 0.83 | 0.85 |
-| Default | 0.49 | 0.59 | 0.53 |
-| **Accuracy** | | | **0.77** |
+| Class              | Precision | Recall | F1-Score       |
+| ------------------ | --------- | ------ | -------------- |
+| No Default         | 0.88      | 0.83   | 0.85           |
+| Default            | 0.49      | 0.59   | 0.53           |
+| **Accuracy** |           |        | **0.77** |
 
 ### Optimal Threshold
 
@@ -85,22 +83,22 @@ credit-risk-project/
 
 ## Generated Visualizations
 
-| # | Figure | Description |
-|---|--------|-------------|
-| 01 | Target Distribution | Class imbalance visualization |
-| 02 | Correlation Heatmap | Feature correlation matrix |
-| 03 | Feature Distributions | Key features by default status |
-| 04 | Box Plots | Outlier detection by class |
-| 05 | Payment Status | Default rate by payment delay |
-| 06 | ROC Curves | All 4 models comparison |
-| 07 | PR Curves | Precision-Recall curves |
-| 08 | Confusion Matrix | Best model (Random Forest) |
-| 09 | Threshold Analysis | Precision/Recall/F1 vs threshold |
-| 10 | SHAP Summary | Feature importance + direction |
-| 11 | SHAP Bar | Feature importance ranking |
-| 12 | SHAP Dependence | Top feature interactions |
-| 13 | SHAP Waterfall | Individual prediction explanation |
-| 14 | SHAP Force | Force plot visualization |
+| #  | Figure                | Description                       |
+| -- | --------------------- | --------------------------------- |
+| 01 | Target Distribution   | Class imbalance visualization     |
+| 02 | Correlation Heatmap   | Feature correlation matrix        |
+| 03 | Feature Distributions | Key features by default status    |
+| 04 | Box Plots             | Outlier detection by class        |
+| 05 | Payment Status        | Default rate by payment delay     |
+| 06 | ROC Curves            | All 4 models comparison           |
+| 07 | PR Curves             | Precision-Recall curves           |
+| 08 | Confusion Matrix      | Best model (Random Forest)        |
+| 09 | Threshold Analysis    | Precision/Recall/F1 vs threshold  |
+| 10 | SHAP Summary          | Feature importance + direction    |
+| 11 | SHAP Bar              | Feature importance ranking        |
+| 12 | SHAP Dependence       | Top feature interactions          |
+| 13 | SHAP Waterfall        | Individual prediction explanation |
+| 14 | SHAP Force            | Force plot visualization          |
 
 ## How to Run
 
