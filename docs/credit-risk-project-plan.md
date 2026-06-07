@@ -1,8 +1,8 @@
 # Credit Risk Prediction Model — Plan de Trabajo Completo
 
-> **Rol objetivo:** Data Scientist · BCP  
-> **Stack:** Python 3.12 · uv · scikit-learn · XGBoost · LightGBM · SHAP  
-> **Duración estimada:** 8 horas  
+> **Rol objetivo:** Data Scientist 
+> **Stack:** Python 3.12 · uv · scikit-learn · XGBoost · LightGBM · SHAP
+> **Duración estimada:** 8 horas
 
 ---
 
@@ -16,16 +16,16 @@
 
 ## Stack Tecnológico
 
-| Categoría | Herramientas |
-|-----------|-------------|
-| Entorno | `uv` + Python 3.12 |
-| Datos | `pandas`, `numpy`, `scipy` |
-| ML | `scikit-learn`, `xgboost`, `lightgbm`, `imbalanced-learn` |
-| Interpretabilidad | `shap` |
-| Visualización | `matplotlib`, `seaborn` |
-| Serialización | `joblib` |
-| Notebooks | `jupyter`, `ipykernel` |
-| Control de versiones | `git` + GitHub |
+| Categoría           | Herramientas                                                      |
+| -------------------- | ----------------------------------------------------------------- |
+| Entorno              | `uv` + Python 3.12                                              |
+| Datos                | `pandas`, `numpy`, `scipy`                                  |
+| ML                   | `scikit-learn`, `xgboost`, `lightgbm`, `imbalanced-learn` |
+| Interpretabilidad    | `shap`                                                          |
+| Visualización       | `matplotlib`, `seaborn`                                       |
+| Serialización       | `joblib`                                                        |
+| Notebooks            | `jupyter`, `ipykernel`                                        |
+| Control de versiones | `git` + GitHub                                                  |
 
 ---
 
@@ -54,19 +54,19 @@ credit-risk-model/
 
 ## Roadmap de 8 Horas
 
-| Hora | Bloque | Entregable |
-|------|--------|-----------|
-| 0:00 – 0:30 | ① Setup: uv, Python 3.12, estructura de carpetas, descarga de datos | Entorno listo, datos en `data/raw/` |
-| 0:30 – 1:45 | ② EDA: distribuciones, correlaciones, análisis del desbalance | 5 gráficos en `reports/figures/` |
-| 1:45 – 2:45 | ③ Preprocesamiento: imputación, winsorización, feature engineering | Pipeline de transformación validado |
-| 2:45 – 3:00 | ③ SMOTE + verificación sin data leakage | Train set balanceado |
-| 3:00 – 4:30 | ④ Modelado: CV 5-fold de 4 modelos + entrenamiento final | 4 modelos serializados en `models/` |
-| 4:30 – 5:15 | ⑤ Evaluación: AUC, Gini, KS, curvas ROC | Tabla de resultados exportada |
-| 5:15 – 5:45 | ⑤ Threshold analysis con cost matrix | Threshold óptimo documentado |
-| 5:45 – 6:45 | ⑥ SHAP: summary, beeswarm, waterfall x2, dependence | 4 gráficos SHAP en `reports/figures/` |
-| 6:45 – 7:15 | ⑦ Polish: limpiar notebooks, verificar ejecución end-to-end | Notebooks con outputs visibles |
-| 7:15 – 7:45 | ⑧ README + push a GitHub | Repositorio público listo |
-| 7:45 – 8:00 | ⑨ Buffer / ajustes finales | — |
+| Hora         | Bloque                                                                | Entregable                               |
+| ------------ | --------------------------------------------------------------------- | ---------------------------------------- |
+| 0:00 – 0:30 | ① Setup: uv, Python 3.12, estructura de carpetas, descarga de datos  | Entorno listo, datos en `data/raw/`    |
+| 0:30 – 1:45 | ② EDA: distribuciones, correlaciones, análisis del desbalance       | 5 gráficos en `reports/figures/`      |
+| 1:45 – 2:45 | ③ Preprocesamiento: imputación, winsorización, feature engineering | Pipeline de transformación validado     |
+| 2:45 – 3:00 | ③ SMOTE + verificación sin data leakage                             | Train set balanceado                     |
+| 3:00 – 4:30 | ④ Modelado: CV 5-fold de 4 modelos + entrenamiento final             | 4 modelos serializados en `models/`    |
+| 4:30 – 5:15 | ⑤ Evaluación: AUC, Gini, KS, curvas ROC                             | Tabla de resultados exportada            |
+| 5:15 – 5:45 | ⑤ Threshold analysis con cost matrix                                 | Threshold óptimo documentado            |
+| 5:45 – 6:45 | ⑥ SHAP: summary, beeswarm, waterfall x2, dependence                  | 4 gráficos SHAP en `reports/figures/` |
+| 6:45 – 7:15 | ⑦ Polish: limpiar notebooks, verificar ejecución end-to-end         | Notebooks con outputs visibles           |
+| 7:15 – 7:45 | ⑧ README + push a GitHub                                             | Repositorio público listo               |
+| 7:45 – 8:00 | ⑨ Buffer / ajustes finales                                           | —                                       |
 
 ### Hitos críticos (no saltarlos)
 
@@ -173,13 +173,13 @@ uv.lock
 
 ### Comparativa de datasets
 
-| Criterio | PATH A: Kaggle (GMSC) | PATH B: UCI (sin registro) |
-|----------|----------------------|---------------------------|
-| Filas | 150,000 ✅ | 30,000 |
-| Variables | 11 | 24 (más ricas) ✅ |
-| Default rate | ~6.7% (muy realista) ✅ | ~22.1% |
-| Acceso | Requiere cuenta Kaggle | Descarga directa ✅ |
-| Feature engineering | Limitado | Historial de pagos rico ✅ |
+| Criterio            | PATH A: Kaggle (GMSC)   | PATH B: UCI (sin registro) |
+| ------------------- | ----------------------- | -------------------------- |
+| Filas               | 150,000 ✅              | 30,000                     |
+| Variables           | 11                      | 24 (más ricas) ✅         |
+| Default rate        | ~6.7% (muy realista) ✅ | ~22.1%                     |
+| Acceso              | Requiere cuenta Kaggle  | Descarga directa ✅        |
+| Feature engineering | Limitado                | Historial de pagos rico ✅ |
 
 ### PATH A — Con cuenta Kaggle
 
@@ -380,13 +380,13 @@ plt.show()
 
 **Gráficos producidos:**
 
-| Archivo | Descripción |
-|---------|-------------|
-| `01_class_distribution.png` | Bar chart + pie del desbalance de clases |
-| `02_distributions.png` | Histogramas de todas las variables numéricas |
+| Archivo                       | Descripción                                    |
+| ----------------------------- | ----------------------------------------------- |
+| `01_class_distribution.png` | Bar chart + pie del desbalance de clases        |
+| `02_distributions.png`      | Histogramas de todas las variables numéricas   |
 | `03_correlation_target.png` | Barras de correlación con la variable objetivo |
-| `04_heatmap.png` | Heatmap triangular de correlaciones |
-| `05_bivariate.png` | Mediana de top 6 variables por clase |
+| `04_heatmap.png`            | Heatmap triangular de correlaciones             |
+| `05_bivariate.png`          | Mediana de top 6 variables por clase            |
 
 ---
 
@@ -516,12 +516,12 @@ print(f"  Default rate: {y_train_smote.mean():.2%}")
 
 **Decisiones de diseño clave:**
 
-| Decisión | Justificación |
-|----------|--------------|
-| Winsorización P1/P99 | Preserva registros extremos pero limita su influencia. Alternativa más robusta que eliminar outliers. |
-| SMOTE con `strategy=0.25` | 25% de defaults es más realista que 50/50. Reduce riesgo de overfitting sobre clase sintética. |
-| Scaling solo para LR | Modelos tree-based (RF, XGB, LGB) son invariantes a la escala. Aplicar scaling innecesario no daña pero añade complejidad. |
-| FE antes de split | **INCORRECTO** — siempre split primero. FE aquí se aplica post-split sobre train y test por separado. |
+| Decisión                   | Justificación                                                                                                               |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Winsorización P1/P99       | Preserva registros extremos pero limita su influencia. Alternativa más robusta que eliminar outliers.                       |
+| SMOTE con `strategy=0.25` | 25% de defaults es más realista que 50/50. Reduce riesgo de overfitting sobre clase sintética.                             |
+| Scaling solo para LR        | Modelos tree-based (RF, XGB, LGB) son invariantes a la escala. Aplicar scaling innecesario no daña pero añade complejidad. |
+| FE antes de split           | **INCORRECTO** — siempre split primero. FE aquí se aplica post-split sobre train y test por separado.                |
 
 ---
 
@@ -743,12 +743,12 @@ plt.show()
 
 **Resultados esperados (valores aproximados para Give Me Some Credit):**
 
-| Modelo | AUC-ROC | Gini | KS | Avg Precision |
-|--------|---------|------|----|--------------|
-| LightGBM | ~0.860 | ~0.720 | ~0.450 | ~0.40 |
-| XGBoost | ~0.855 | ~0.710 | ~0.445 | ~0.38 |
-| Random Forest | ~0.830 | ~0.660 | ~0.410 | ~0.30 |
-| Logistic Regression | ~0.790 | ~0.580 | ~0.350 | ~0.22 |
+| Modelo              | AUC-ROC | Gini   | KS     | Avg Precision |
+| ------------------- | ------- | ------ | ------ | ------------- |
+| LightGBM            | ~0.860  | ~0.720 | ~0.450 | ~0.40         |
+| XGBoost             | ~0.855  | ~0.710 | ~0.445 | ~0.38         |
+| Random Forest       | ~0.830  | ~0.660 | ~0.410 | ~0.30         |
+| Logistic Regression | ~0.790  | ~0.580 | ~0.350 | ~0.22         |
 
 > Completar con los valores reales al ejecutar.
 
@@ -850,13 +850,13 @@ importance_df.to_csv('reports/shap_importance.csv', index=False)
 
 **Gráficos producidos:**
 
-| Archivo | Descripción |
-|---------|-------------|
-| `09_shap_bar.png` | Feature importance global (barras por media del valor absoluto SHAP) |
-| `10_shap_beeswarm.png` | Dirección e intensidad del impacto de cada variable |
-| `11_shap_waterfall_alto_riesgo.png` | Explicación individual: cliente con máxima P(default) |
-| `11_shap_waterfall_bajo_riesgo.png` | Explicación individual: cliente con mínima P(default) |
-| `12_shap_dependence.png` | Dependence plots de las 2 variables más importantes |
+| Archivo                               | Descripción                                                         |
+| ------------------------------------- | -------------------------------------------------------------------- |
+| `09_shap_bar.png`                   | Feature importance global (barras por media del valor absoluto SHAP) |
+| `10_shap_beeswarm.png`              | Dirección e intensidad del impacto de cada variable                 |
+| `11_shap_waterfall_alto_riesgo.png` | Explicación individual: cliente con máxima P(default)              |
+| `11_shap_waterfall_bajo_riesgo.png` | Explicación individual: cliente con mínima P(default)              |
+| `12_shap_dependence.png`            | Dependence plots de las 2 variables más importantes                 |
 
 ---
 
@@ -943,7 +943,9 @@ credit-risk-model/
 - SMOTE con `sampling_strategy=0.25` mejora Recall sin degradar excesivamente Precision
 
 ---
+
 *Rodrigo Norabuena · [linkedin.com/in/rodnm](https://linkedin.com/in/rodnm) · [rodnm.github.io](https://rodnm.github.io)*
+
 ```
 
 ---
@@ -953,6 +955,7 @@ credit-risk-model/
 ### Archivos que debe tener el repositorio
 
 ```
+
 credit-risk-model/
 ├── notebooks/
 │   ├── 01_EDA.ipynb                     ← con outputs visibles (no limpiar)
@@ -985,6 +988,7 @@ credit-risk-model/
 ├── .python-version                      ← "3.12"
 ├── .gitignore
 └── README.md                            ← con tabla de resultados real
+
 ```
 
 ### Checklist de cierre
