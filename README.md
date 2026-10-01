@@ -1,12 +1,12 @@
 # Credit Risk Prediction Model
 
-Predicting credit card default using the UCI Credit Card Default dataset (30,000 clients, 24 features).
+Predicting credit card default using the UCI Credit Card Default dataset (30,000 clients, 23 predictors after dropping ID).
 
 ## Dataset
 
 - **Source:** [UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients)
 - **Samples:** 30,000 credit card clients
-- **Features:** 24 (demographics, payment history, bill amounts, payment amounts)
+- **Predictors:** 23 original columns (demographics, payment history, bill amounts, payment amounts), plus 9 derived features
 - **Target:** `default` — binary (1 = default next month, 0 = no default)
 - **Default rate:** 22.12%
 
@@ -34,6 +34,7 @@ credit-risk-project/
 ├── models/                      # Serialized models (.pkl)
 ├── reports/figures/             # Generated charts (14 PNGs)
 ├── src/
+│   ├── preprocessing.py        # Shared feature engineering and fold-local pipeline
 │   ├── utils.py                # Utility functions
 │   ├── download_data.py        # Data download script
 │   ├── create_notebooks.py     # Notebook generator (EDA)
@@ -48,38 +49,46 @@ credit-risk-project/
 
 ## Results
 
-### Model Comparison
+The previous CV scores were contaminated: SMOTE was applied to the complete training set before folds were created. Winsorization also used the test set, and scaling used future validation folds. The corrected pipeline fits every learned preprocessing step and SMOTE inside each fold.
 
-| Model                   | CV AUC (5-fold)  | Test AUC         | Gini             | KS Statistic     |
-| ----------------------- | ---------------- | ---------------- | ---------------- | ---------------- |
-| Logistic Regression     | 0.7671           | 0.7450           | 0.3816           | 0.3929           |
-| **Random Forest** | **0.8636** | **0.7729** | **0.4251** | **0.4145** |
-| XGBoost                 | 0.9301           | 0.7607           | 0.4061           | 0.3954           |
-| LightGBM                | 0.9344           | 0.7659           | 0.4141           | 0.3951           |
+Corrected measured results are stored in `models/evaluation_metrics.json` and rendered in [the HTML report](reports/credit_risk_report.html). The table below comes from the corrected execution on 2026-10-01.
 
-**Best model: Random Forest** (Test AUC: 0.7729, Gini: 0.4251, KS: 0.4145)
+<!-- corrected-results:start -->
+| Model | CV AUC (mean ± std) | Test AUC | CV − test |
+| --- | ---: | ---: | ---: |
+| Logistic Regression | 0.7602 ± 0.0060 | 0.7446 | 0.0156 |
+| **Random Forest** | 0.7798 ± 0.0065 | 0.7738 | 0.0060 |
+| XGBoost | 0.7649 ± 0.0053 | 0.7658 | -0.0009 |
+| LightGBM | 0.7678 ± 0.0047 | 0.7667 | 0.0011 |
 
-### Classification Report (Random Forest)
+Selected model: **Random Forest**. OOF threshold: **0.50**. Test precision: 0.4931, recall: 0.5885, F1: 0.5366. Normalized Gini: 0.5476; KS: 0.4208.
+<!-- corrected-results:end -->
 
-| Class              | Precision | Recall | F1-Score       |
-| ------------------ | --------- | ------ | -------------- |
-| No Default         | 0.88      | 0.83   | 0.85           |
-| Default            | 0.49      | 0.59   | 0.53           |
-| **Accuracy** |           |        | **0.77** |
+The model is selected by mean CV AUC. Its classification threshold maximizes F1 on training out-of-fold predictions, using the existing 0.10–0.85 grid in steps of 0.05. Test results are descriptive and never select the winner or threshold. CV standard deviation describes fold variability; it is not a confidence interval.
 
-### Optimal Threshold
+The historical test has already informed earlier model selection, so this rerun is a comparison with the earlier procedure, not a fresh independent validation. New untouched data are needed for that confirmation. Correcting leakage does not guarantee a higher test AUC.
 
-- **Threshold:** 0.55 (max F1)
-- **Precision:** 0.5395 | **Recall:** 0.5358 | **F1:** 0.5376
+### Historical comparison (contaminated CV)
+
+| Model | Historical CV AUC | Historical test AUC |
+| --- | ---: | ---: |
+| Logistic Regression | 0.7671 | 0.7450 |
+| Random Forest | 0.8636 | 0.7729 |
+| XGBoost | 0.9301 | 0.7607 |
+| LightGBM | 0.9344 | 0.7659 |
+
+These scores are retained only to explain the original gap. Synthetic descendants and their source observations could appear on opposite sides of a fold, and validation contained artificial clients. This makes CV optimistic; a changed class ratio alone does not explain a ROC AUC drop. The rerun changes winsorization, scaling, and SMOTE isolation together, so it does not isolate the contribution of SMOTE alone.
+
+See [imbalanced-learn's leakage guidance](https://imbalanced-learn.org/stable/common_pitfalls.html).
 
 ## Pipeline
 
 1. **EDA** — Target distribution, correlation analysis, feature distributions, outlier detection, payment status analysis
 2. **Feature Engineering** — 9 new features: avg/max/std delay, total delay months, avg bill, bill trend, avg payment, pay ratio, credit utilization
-3. **Preprocessing** — Winsorization (1st-99th percentile), StandardScaler, SMOTE oversampling
-4. **Modeling** — 4 models with 5-fold stratified CV, trained on SMOTE-balanced data
-5. **Evaluation** — ROC/PR curves, confusion matrix, threshold analysis, Gini coefficient, KS statistic
-6. **Interpretability** — SHAP summary, bar, dependence, waterfall, and force plots
+3. **Preprocessing** — Split first; each fold fits zero imputation, winsorization (1st–99th percentile), StandardScaler, and SMOTE inside an imbalanced-learn pipeline
+4. **Modeling** — 4 models with 5-fold stratified CV on original training rows; validation and test are never resampled
+5. **Evaluation** — Select model by CV AUC and threshold by out-of-fold F1; evaluate test after fixing both. Report normalized Gini (2 × AUC − 1) and KS
+6. **Interpretability** — Load the selected pipeline; explain its estimator with fitted preprocessing, using a deterministic sample of up to 500 test clients
 
 ## Generated Visualizations
 
@@ -92,8 +101,8 @@ credit-risk-project/
 | 05 | Payment Status        | Default rate by payment delay     |
 | 06 | ROC Curves            | All 4 models comparison           |
 | 07 | PR Curves             | Precision-Recall curves           |
-| 08 | Confusion Matrix      | Best model (Random Forest)        |
-| 09 | Threshold Analysis    | Precision/Recall/F1 vs threshold  |
+| 08 | Confusion Matrix      | Model selected by CV        |
+| 09 | Threshold Analysis    | Training out-of-fold Precision/Recall/F1 vs threshold  |
 | 10 | SHAP Summary          | Feature importance + direction    |
 | 11 | SHAP Bar              | Feature importance ranking        |
 | 12 | SHAP Dependence       | Top feature interactions          |
@@ -113,12 +122,25 @@ uv run python src/download_data.py
 uv run jupyter nbconvert --to notebook --execute --inplace notebooks/01_EDA.ipynb
 uv run jupyter nbconvert --to notebook --execute --inplace notebooks/02_Modeling.ipynb
 uv run jupyter nbconvert --to notebook --execute --inplace notebooks/03_Interpretability.ipynb
+
+# Render the measured results
+uv run python src/generate_report.py
+
+# Verify isolation and serialization
+uv run python -m unittest discover -s tests -v
 ```
 
-## Key Takeaways
+## Reproducibility and artifacts
 
-- **Random Forest** outperforms gradient boosting models on test AUC despite lower CV scores, suggesting better generalization
-- **Payment delay history** (PAY_0, avg_delay) is the strongest predictor of default
-- **Credit utilization** (BILL_AMT1 / LIMIT_BAL) is a key engineered feature
-- SMOTE helps address class imbalance but introduces some overfitting risk (high CV vs test AUC gap for boosting models)
-- Banking-relevant metrics (Gini > 0.4, KS > 0.4) indicate the model meets minimum acceptance thresholds for credit scoring
+Run commands from the project root. After changing a generator, regenerate its notebook before execution:
+
+```bash
+uv run python src/create_nb_modeling.py
+uv run python src/create_nb_shap.py
+```
+
+`models/best_pipeline.pkl` is the selected fitted pipeline; named model files also contain complete pipelines, replacing the old estimator-only format. Inference accepts engineered columns in the saved order, without prior imputation or scaling. Use `engineer_features` from `src.preprocessing` for the original predictor columns. Keep the project root on Python's import path when loading these artifacts.
+
+The metrics JSON records model selection, the OOF threshold, per-fold scores, feature columns, and dataset hash. Regenerate the SHAP notebook and HTML report after retraining. SHAP uses original training clients as background where needed and never resamples test clients.
+
+Feature contributions are model explanations, not causal findings. AUC, Gini, and KS alone do not establish suitability for lending decisions.

@@ -1,264 +1,186 @@
+"""Generate the modeling notebook (generation requires only nbformat)."""
+from pathlib import Path
 import nbformat as nbf
 
 nb = nbf.v4.new_notebook()
-nb.metadata.kernelspec = {"display_name": "Python 3", "language": "python", "name": "python3"}
+nb.metadata.kernelspec = {'display_name': 'Python 3', 'language': 'python', 'name': 'python3'}
 cells = []
 
-cells.append(nbf.v4.new_markdown_cell("# Credit Risk Prediction - Modeling & Evaluation\n\nPreprocessing, model training, and evaluation pipeline"))
+def markdown(text):
+    cells.append(nbf.v4.new_markdown_cell(text))
 
-cells.append(nbf.v4.new_code_cell("""import pandas as pd
+def code(text):
+    cells.append(nbf.v4.new_code_cell(text))
+
+markdown('''# Credit Risk Prediction — Modeling & Evaluation
+
+Previously SMOTE ran before fold splitting: related original and synthetic samples could
+cross validation boundaries, inflating AUC. Here each fold independently fits imputation,
+winsorization, scaling and SMOTE. Validation and test retain original clients.
+The historical test has already informed decisions; independent confirmation requires new data.
+The goal is reliable evaluation, not a guaranteed reduction in the AUC gap.''')
+code('''from pathlib import Path
+import sys
+import json
+import hashlib
+import joblib
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy import stats
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
-from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score, cross_val_predict
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from sklearn.metrics import (roc_auc_score, roc_curve, precision_recall_curve,
-                             confusion_matrix, classification_report, f1_score,
-                             average_precision_score)
-from imblearn.over_sampling import SMOTE
-import joblib
-import warnings
-warnings.filterwarnings('ignore')
-
+    confusion_matrix, classification_report, f1_score, precision_score, recall_score,
+    average_precision_score)
+ROOT = Path.cwd() if (Path.cwd() / 'src').is_dir() else Path.cwd().parent
+sys.path.insert(0, str(ROOT))
+from src.preprocessing import engineer_features, make_pipeline
+FIGURES = ROOT / 'reports/figures'
+MODELS = ROOT / 'models'
+FIGURES.mkdir(parents=True, exist_ok=True)
+MODELS.mkdir(parents=True, exist_ok=True)
 sns.set_style('whitegrid')
-plt.rcParams['figure.figsize'] = (12, 6)
-"""))
+''')
+markdown('## 1. Load data, derive row-local features and reserve test')
+code('''data_path = ROOT / 'data/raw/default of credit card clients.xls'
+df = pd.read_excel(data_path, header=1, engine='xlrd')
+df = df.rename(columns={'default payment next month': 'default'}).drop(columns='ID')
+X = engineer_features(df.drop(columns='default'))
+y = df['default']
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y)
+print(f'Train: {len(X_train)}; test: {len(X_test)}; features: {X.shape[1]}')
+''')
+markdown('''## 2. CV with SMOTE inside each fold
 
-cells.append(nbf.v4.new_markdown_cell("## 1. Load Data"))
-cells.append(nbf.v4.new_code_cell("""df = pd.read_excel('../data/raw/default of credit card clients.xls', header=1, engine='xlrd')
-df.rename(columns={'default payment next month': 'default'}, inplace=True)
-df.drop('ID', axis=1, inplace=True)
-
-TARGET = 'default'
-X = df.drop(TARGET, axis=1)
-y = df[TARGET]
-print(f"Features: {X.shape[1]}, Samples: {X.shape[0]}")
-print(f"Default rate: {y.mean():.2%}")
-"""))
-
-cells.append(nbf.v4.new_markdown_cell("## 2. Feature Engineering"))
-cells.append(nbf.v4.new_code_cell("""# Payment delay features
-pay_cols = ['PAY_0', 'PAY_2', 'PAY_3', 'PAY_4', 'PAY_5', 'PAY_6']
-X['avg_delay'] = X[pay_cols].mean(axis=1)
-X['max_delay'] = X[pay_cols].max(axis=1)
-X['delay_std'] = X[pay_cols].std(axis=1)
-X['total_delay_months'] = (X[pay_cols] > 0).sum(axis=1)
-
-# Bill amount features
-bill_cols = ['BILL_AMT1', 'BILL_AMT2', 'BILL_AMT3', 'BILL_AMT4', 'BILL_AMT5', 'BILL_AMT6']
-X['avg_bill'] = X[bill_cols].mean(axis=1)
-X['bill_trend'] = X['BILL_AMT1'] - X['BILL_AMT6']
-
-# Payment amount features
-pay_amt_cols = ['PAY_AMT1', 'PAY_AMT2', 'PAY_AMT3', 'PAY_AMT4', 'PAY_AMT5', 'PAY_AMT6']
-X['avg_pay_amt'] = X[pay_amt_cols].mean(axis=1)
-X['pay_ratio'] = X['avg_pay_amt'] / (X['avg_bill'] + 1)
-
-# Credit utilization
-X['credit_util'] = X['BILL_AMT1'] / (X['LIMIT_BAL'] + 1)
-
-print(f"Features after engineering: {X.shape[1]}")
-print(f"New features: avg_delay, max_delay, delay_std, total_delay_months,")
-print(f"              avg_bill, bill_trend, avg_pay_amt, pay_ratio, credit_util")
-"""))
-
-cells.append(nbf.v4.new_markdown_cell("## 3. Imputation & Winsorization"))
-cells.append(nbf.v4.new_code_cell("""X.fillna(0, inplace=True)
-print(f"NaN after imputation: {X.isnull().sum().sum()}")
-
-def winsorize(series, lower=0.01, upper=0.99):
-    lo = series.quantile(lower)
-    hi = series.quantile(upper)
-    return series.clip(lo, hi)
-
-numeric_cols = X.select_dtypes(include=[np.number]).columns
-for col in numeric_cols:
-    X[col] = winsorize(X[col])
-print("Winsorization applied (1st-99th percentile)")
-"""))
-
-cells.append(nbf.v4.new_markdown_cell("## 4. Train/Test Split & Scaling"))
-cells.append(nbf.v4.new_code_cell("""X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
-
-scaler = StandardScaler()
-X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=X.columns, index=X_train.index)
-X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=X.columns, index=X_test.index)
-
-print(f"Train: {X_train.shape[0]} samples (default: {y_train.mean():.2%})")
-print(f"Test:  {X_test.shape[0]} samples (default: {y_test.mean():.2%})")
-"""))
-
-cells.append(nbf.v4.new_markdown_cell("## 5. SMOTE Oversampling"))
-cells.append(nbf.v4.new_code_cell("""smote = SMOTE(random_state=42, k_neighbors=5)
-X_train_sm, y_train_sm = smote.fit_resample(X_train_scaled, y_train)
-print(f"After SMOTE: {X_train_sm.shape[0]} samples (default: {y_train_sm.mean():.2%})")
-"""))
-
-cells.append(nbf.v4.new_markdown_cell("## 6. Model Training with Cross-Validation"))
-cells.append(nbf.v4.new_code_cell("""models = {
+Each pipeline is imputer → winsorizer → scaler → SMOTE → classifier.
+All fitted statistics come exclusively from the fold training partition. SMOTE is skipped
+at prediction. Select the model by mean validation AUC only.''')
+code('''models = {
     'Logistic Regression': LogisticRegression(max_iter=1000, random_state=42, class_weight='balanced'),
     'Random Forest': RandomForestClassifier(n_estimators=200, max_depth=10, random_state=42, n_jobs=-1),
     'XGBoost': XGBClassifier(n_estimators=200, max_depth=6, learning_rate=0.1, random_state=42,
-                              eval_metric='logloss', use_label_encoder=False),
-    'LightGBM': LGBMClassifier(n_estimators=200, max_depth=6, learning_rate=0.1, random_state=42,
-                                verbose=-1)
+                           eval_metric='logloss', use_label_encoder=False),
+    'LightGBM': LGBMClassifier(n_estimators=200, max_depth=6, learning_rate=0.1, random_state=42, verbose=-1)
 }
-
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 results = {}
+for name, classifier in models.items():
+    pipeline = make_pipeline(classifier)
+    scores = cross_val_score(pipeline, X_train, y_train, cv=cv, scoring='roc_auc', error_score='raise')
+    results[name] = {'cv_scores': scores.tolist(), 'cv_mean': float(scores.mean()),
+                     'cv_std': float(scores.std()), 'model': pipeline}
+    print(f'{name}: CV AUC {scores.mean():.4f} +/- {scores.std():.4f}')
+best_model_name = max(results, key=lambda name: results[name]['cv_mean'])
+print(f'Selected using CV: {best_model_name}')
+''')
+markdown('''## 3. Select threshold from training out-of-fold predictions
 
-print("=" * 70)
-print(f"{'Model':<25} {'CV AUC':<12} {'CV Std':<10} {'Test AUC':<12}")
-print("=" * 70)
-
-for name, model in models.items():
-    cv_scores = cross_val_score(model, X_train_sm, y_train_sm, cv=cv, scoring='roc_auc')
-    model.fit(X_train_sm, y_train_sm)
-    y_prob = model.predict_proba(X_test_scaled)[:, 1]
-    test_auc = roc_auc_score(y_test, y_prob)
-    results[name] = {'cv_mean': cv_scores.mean(), 'cv_std': cv_scores.std(),
-                     'test_auc': test_auc, 'model': model, 'y_prob': y_prob}
-    print(f"{name:<25} {cv_scores.mean():<12.4f} {cv_scores.std():<10.4f} {test_auc:<12.4f}")
-
-print("=" * 70)
-best_model_name = max(results, key=lambda x: results[x]['test_auc'])
-print(f"\\nBest model: {best_model_name} (Test AUC: {results[best_model_name]['test_auc']:.4f})")
-"""))
-
-cells.append(nbf.v4.new_markdown_cell("## 7. ROC Curves"))
-cells.append(nbf.v4.new_code_cell("""plt.figure(figsize=(10, 8))
-colors = ['blue', 'green', 'red', 'purple']
-
-for (name, res), color in zip(results.items(), colors):
-    fpr, tpr, _ = roc_curve(y_test, res['y_prob'])
-    plt.plot(fpr, tpr, color=color, lw=2, label=f"{name} (AUC={res['test_auc']:.4f})")
-
-plt.plot([0, 1], [0, 1], 'k--', lw=1, label='Random')
-plt.xlabel('False Positive Rate')
-plt.ylabel('True Positive Rate')
-plt.title('ROC Curves - All Models')
-plt.legend(loc='lower right')
+Maximize F1 over the original grid (0.10–0.85, step 0.05); ties use the smallest threshold.
+These OOF scores tune the threshold and are not independent evaluation after model selection.''')
+code('''oof_prob = cross_val_predict(results[best_model_name]['model'], X_train, y_train,
+                             cv=cv, method='predict_proba')[:, 1]
+metrics = []
+for threshold in np.arange(0.1, 0.9, 0.05):
+    predictions = (oof_prob >= threshold).astype(int)
+    tn, fp, fn, tp = confusion_matrix(y_train, predictions, labels=[0, 1]).ravel()
+    metrics.append({'threshold': float(threshold),
+                    'precision': float(precision_score(y_train, predictions, zero_division=0)),
+                    'recall': float(recall_score(y_train, predictions, zero_division=0)),
+                    'f1': float(f1_score(y_train, predictions, zero_division=0)),
+                    'fpr': float(fp / (fp + tn))})
+metrics_df = pd.DataFrame(metrics)
+optimal_threshold = float(metrics_df.loc[metrics_df['f1'].idxmax(), 'threshold'])
+print(f'OOF-selected threshold: {optimal_threshold:.2f}')
+ax = metrics_df.plot(x='threshold', y=['precision', 'recall', 'f1'], marker='o', figsize=(12, 6))
+ax.axvline(optimal_threshold, color='gray', linestyle='--', label='Selected threshold')
+ax.set_title('Threshold selection — training out-of-fold predictions')
+ax.legend()
 plt.tight_layout()
-plt.savefig('../reports/figures/06_roc_curves.png', dpi=150, bbox_inches='tight')
+plt.savefig(FIGURES / '09_threshold_analysis.png', dpi=150)
 plt.show()
-"""))
+''')
+markdown('''## 4. Final fitting and test evaluation
 
-cells.append(nbf.v4.new_markdown_cell("## 8. Precision-Recall Curves"))
-cells.append(nbf.v4.new_code_cell("""plt.figure(figsize=(10, 8))
-colors = ['blue', 'green', 'red', 'purple']
-
-for (name, res), color in zip(results.items(), colors):
-    precision, recall, _ = precision_recall_curve(y_test, res['y_prob'])
-    ap = average_precision_score(y_test, res['y_prob'])
-    plt.plot(recall, precision, color=color, lw=2, label=f"{name} (AP={ap:.4f})")
-
-plt.xlabel('Recall')
-plt.ylabel('Precision')
-plt.title('Precision-Recall Curves')
-plt.legend(loc='lower left')
-plt.tight_layout()
-plt.savefig('../reports/figures/07_pr_curves.png', dpi=150, bbox_inches='tight')
-plt.show()
-"""))
-
-cells.append(nbf.v4.new_markdown_cell("## 9. Confusion Matrix (Best Model)"))
-cells.append(nbf.v4.new_code_cell("""best_model = results[best_model_name]['model']
-y_pred = best_model.predict(X_test_scaled)
-
+Model and threshold are fixed before reading test outcomes. Other models' test scores are
+descriptive comparisons and must not be used to revise the selection.''')
+code('''for name, res in results.items():
+    res['model'].fit(X_train, y_train)
+    prob = res['model'].predict_proba(X_test)[:, 1]
+    assert len(prob) == len(X_test)
+    fpr, tpr, _ = roc_curve(y_test, prob)
+    res.update(y_prob=prob, test_auc=float(roc_auc_score(y_test, prob)),
+               average_precision=float(average_precision_score(y_test, prob)),
+               gini=float(2 * roc_auc_score(y_test, prob) - 1), ks=float(np.max(tpr - fpr)))
+    print(f"{name}: CV {res['cv_mean']:.4f} +/- {res['cv_std']:.4f}; test {res['test_auc']:.4f}")
+best_pipeline = results[best_model_name]['model']
+y_prob_best = results[best_model_name]['y_prob']
+y_pred = (y_prob_best >= optimal_threshold).astype(int)
+cm = confusion_matrix(y_test, y_pred, labels=[0, 1])
+best_test_metrics = {'precision': float(precision_score(y_test, y_pred, zero_division=0)),
+                     'recall': float(recall_score(y_test, y_pred, zero_division=0)),
+                     'f1': float(f1_score(y_test, y_pred, zero_division=0)),
+                     'confusion_matrix': cm.tolist()}
+print(classification_report(y_test, y_pred, target_names=['No Default', 'Default'], zero_division=0))
+''')
+markdown('## 5. Test curves and confusion matrix')
+code('''for kind, filename in [('roc', '06_roc_curves.png'), ('pr', '07_pr_curves.png')]:
+    plt.figure(figsize=(10, 8))
+    for name, res in results.items():
+        if kind == 'roc':
+            horizontal, vertical, _ = roc_curve(y_test, res['y_prob'])
+            label = f"{name} (AUC={res['test_auc']:.4f})"
+        else:
+            vertical, horizontal, _ = precision_recall_curve(y_test, res['y_prob'])
+            label = f"{name} (AP={res['average_precision']:.4f})"
+        plt.plot(horizontal, vertical, label=label)
+    if kind == 'roc':
+        plt.plot([0, 1], [0, 1], 'k--')
+    plt.xlabel('False Positive Rate' if kind == 'roc' else 'Recall')
+    plt.ylabel('True Positive Rate' if kind == 'roc' else 'Precision')
+    plt.title('Test ROC curves' if kind == 'roc' else 'Test precision-recall curves')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(FIGURES / filename, dpi=150)
+    plt.show()
 plt.figure(figsize=(8, 6))
-cm = confusion_matrix(y_test, y_pred)
 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-            xticklabels=['No Default', 'Default'],
-            yticklabels=['No Default', 'Default'])
+            xticklabels=['No Default', 'Default'], yticklabels=['No Default', 'Default'])
 plt.xlabel('Predicted')
 plt.ylabel('Actual')
-plt.title(f'Confusion Matrix - {best_model_name}')
+plt.title(f'{best_model_name} — OOF threshold {optimal_threshold:.2f}')
 plt.tight_layout()
-plt.savefig('../reports/figures/08_confusion_matrix.png', dpi=150, bbox_inches='tight')
+plt.savefig(FIGURES / '08_confusion_matrix.png', dpi=150)
 plt.show()
+''')
+markdown('''## 6. Save complete pipelines and metrics
 
-print("\\nClassification Report:")
-print(classification_report(y_test, y_pred, target_names=['No Default', 'Default']))
-"""))
-
-cells.append(nbf.v4.new_markdown_cell("## 10. Threshold Analysis"))
-cells.append(nbf.v4.new_code_cell("""y_prob_best = results[best_model_name]['y_prob']
-thresholds = np.arange(0.1, 0.9, 0.05)
-metrics = []
-
-for t in thresholds:
-    y_pred_t = (y_prob_best >= t).astype(int)
-    tn, fp, fn, tp = confusion_matrix(y_test, y_pred_t).ravel()
-    metrics.append({
-        'threshold': t,
-        'precision': tp / (tp + fp) if (tp + fp) > 0 else 0,
-        'recall': tp / (tp + fn) if (tp + fn) > 0 else 0,
-        'f1': f1_score(y_test, y_pred_t, zero_division=0),
-        'fpr': fp / (fp + tn) if (fp + tn) > 0 else 0
-    })
-
-metrics_df = pd.DataFrame(metrics)
-
-plt.figure(figsize=(12, 6))
-plt.plot(metrics_df['threshold'], metrics_df['precision'], 'b-o', label='Precision', markersize=4)
-plt.plot(metrics_df['threshold'], metrics_df['recall'], 'r-o', label='Recall', markersize=4)
-plt.plot(metrics_df['threshold'], metrics_df['f1'], 'g-o', label='F1', markersize=4)
-plt.axvline(x=0.5, color='gray', linestyle='--', label='Default threshold (0.5)')
-plt.xlabel('Threshold')
-plt.ylabel('Score')
-plt.title('Threshold Analysis')
-plt.legend()
-plt.grid(True, alpha=0.3)
-plt.tight_layout()
-plt.savefig('../reports/figures/09_threshold_analysis.png', dpi=150, bbox_inches='tight')
-plt.show()
-
-optimal_idx = metrics_df['f1'].idxmax()
-print(f"Optimal threshold (max F1): {metrics_df.loc[optimal_idx, 'threshold']:.2f}")
-print(f"  Precision: {metrics_df.loc[optimal_idx, 'precision']:.4f}")
-print(f"  Recall: {metrics_df.loc[optimal_idx, 'recall']:.4f}")
-print(f"  F1: {metrics_df.loc[optimal_idx, 'f1']:.4f}")
-"""))
-
-cells.append(nbf.v4.new_markdown_cell("## 11. Model Serialization"))
-cells.append(nbf.v4.new_code_cell("""for name, res in results.items():
-    safe_name = name.lower().replace(' ', '_')
-    joblib.dump(res['model'], f'../models/{safe_name}.pkl')
-    print(f"Saved: models/{safe_name}.pkl")
-
-joblib.dump(scaler, '../models/scaler.pkl')
-print("Saved: models/scaler.pkl")
-"""))
-
-cells.append(nbf.v4.new_markdown_cell("## 12. Gini & KS Statistics"))
-cells.append(nbf.v4.new_code_cell("""def gini_coef(y_true, y_prob):
-    arr = np.array([y_true, y_prob]).T
-    arr = arr[np.argsort(arr[:, 1])]
-    n = len(arr)
-    cum_y = np.cumsum(arr[:, 0])
-    return 1 - 2 * np.sum(cum_y) / (n * np.sum(arr[:, 0])) + 1/n
-
-def ks_stat(y_true, y_prob):
-    from sklearn.metrics import roc_curve
-    fpr, tpr, _ = roc_curve(y_true, y_prob)
-    return max(tpr - fpr)
-
-print(f"{'Model':<25} {'Gini':<10} {'KS':<10}")
-print("=" * 45)
-for name, res in results.items():
-    gini = gini_coef(y_test, res['y_prob'])
-    ks = ks_stat(y_test, res['y_prob'])
-    print(f"{name:<25} {gini:<10.4f} {ks:<10.4f}")
-"""))
-
+Inference: derive features using `src.preprocessing.engineer_features`, order columns using
+`feature_columns`, and apply the saved threshold to `best_pipeline.predict_proba(X)[:, 1]`.
+The classifier's `predict` method uses its default threshold, not the OOF-selected threshold.''')
+code('''for name, res in results.items():
+    joblib.dump(res['model'], MODELS / f"{name.lower().replace(' ', '_')}.pkl")
+joblib.dump(best_pipeline, MODELS / 'best_pipeline.pkl')
+metadata = {
+    'schema_version': 1, 'pipeline_version': 1,
+    'dataset_sha256': hashlib.sha256(data_path.read_bytes()).hexdigest(),
+    'best_model': best_model_name, 'threshold': optimal_threshold,
+    'selection_metric': 'cv_mean', 'threshold_source': 'training_out_of_fold',
+    'feature_columns': X.columns.tolist(),
+    'split': {'test_size': 0.2, 'random_state': 42, 'cv_folds': 5},
+    'models': {name: {key: value for key, value in res.items() if key not in ('model', 'y_prob')}
+               for name, res in results.items()},
+    'best_test_metrics': best_test_metrics, 'threshold_metrics': metrics,
+    'test_limitation': 'Historically reused test; independent confirmation requires new data.'
+}
+(MODELS / 'evaluation_metrics.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
+print(f'Saved complete pipelines and evaluation_metrics.json to {MODELS}')
+''')
 nb.cells = cells
-with open('notebooks/02_Modeling.ipynb', 'w', encoding='utf-8') as f:
-    nbf.write(nb, f)
-print("Created notebooks/02_Modeling.ipynb")
+destination = Path(__file__).resolve().parents[1] / 'notebooks/02_Modeling.ipynb'
+nbf.write(nb, destination)
+print(f'Created {destination}')

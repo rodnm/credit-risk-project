@@ -1,26 +1,55 @@
+"""Render the original report layout with corrected, measured evaluation results."""
 import base64
-import os
+import json
+from html import escape
 from pathlib import Path
 
-FIGURES_DIR = Path("reports/figures")
-OUTPUT = Path("reports/credit_risk_report.html")
+ROOT = Path(__file__).resolve().parents[1]
+FIGURES_DIR = ROOT / "reports/figures"
+OUTPUT = ROOT / "reports/credit_risk_report.html"
+METRICS = ROOT / "models/evaluation_metrics.json"
+SHAP_METADATA = ROOT / "models/interpretability_metadata.json"
 
-def img_to_base64(filename):
-    path = FIGURES_DIR / filename
-    if not path.exists():
-        return ""
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
+def generate_report():
+    if not METRICS.exists():
+        raise FileNotFoundError("Ejecute 02_Modeling.ipynb para generar evaluation_metrics.json.")
+    metrics = json.loads(METRICS.read_text(encoding="utf-8"))
+    if metrics.get("schema_version") != 1 or metrics.get("threshold_source") != "training_out_of_fold":
+        raise ValueError("Se requieren métricas del pipeline corregido y umbral OOF.")
+    if not SHAP_METADATA.exists():
+        raise FileNotFoundError("Ejecute 03_Interpretability.ipynb antes de generar el informe.")
+    shap_metadata = json.loads(SHAP_METADATA.read_text(encoding="utf-8"))
+    if (shap_metadata["best_model"] != metrics["best_model"] or
+            shap_metadata["dataset_sha256"] != metrics["dataset_sha256"]):
+        raise ValueError("Las figuras SHAP no corresponden a esta evaluación.")
+    winner = metrics["best_model"]
+    winner_html = escape(winner)
+    winner_result = metrics["models"][winner]
+    best = metrics["best_test_metrics"]
+    threshold = metrics["threshold"]
+    tn, fp = best["confusion_matrix"][0]
+    fn, tp = best["confusion_matrix"][1]
+    negative_precision = tn / (tn + fn)
+    negative_recall = tn / (tn + fp)
+    negative_f1 = 2 * negative_precision * negative_recall / (negative_precision + negative_recall)
+    accuracy = (tn + tp) / (tn + fp + fn + tp)
+    model_rows = ""
+    for name, result in metrics["models"].items():
+        style = ' style="background: #d4efdf; font-weight: 600;"' if name == winner else ""
+        model_rows += (
+            f"<tr{style}><td>{escape(name)}</td>"
+            f"<td>{result['cv_mean']:.4f}</td><td>{result['cv_std']:.4f}</td>"
+            f"<td>{result['test_auc']:.4f}</td><td>{result['gini']:.4f}</td>"
+            f"<td>{result['ks']:.4f}</td></tr>\n"
+        )
+    figures = {}
+    for number in range(1, 15):
+        matches = list(FIGURES_DIR.glob(f"{number:02d}_*.png"))
+        if len(matches) != 1:
+            raise FileNotFoundError(f"Se esperaba una figura {number:02d} en {FIGURES_DIR}")
+        figures[matches[0].stem] = base64.b64encode(matches[0].read_bytes()).decode("ascii")
 
-figures = {}
-for i in range(1, 15):
-    name = f"{i:02d}_*.png"
-    matches = list(FIGURES_DIR.glob(name))
-    if matches:
-        key = matches[0].stem
-        figures[key] = img_to_base64(matches[0].name)
-
-html = f"""<!DOCTYPE html>
+    html = f"""<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -267,7 +296,7 @@ html = f"""<!DOCTYPE html>
   <div class="container">
     <h1>Predicción de Riesgo Crediticio</h1>
     <div class="subtitle">Análisis de Default en Tarjetas de Crédito — UCI Dataset</div>
-    <div class="meta">Proyecto de Ciencia de Datos &middot; Junio 2026</div>
+    <div class="meta">Proyecto de Ciencia de Datos &middot; Evaluación actualizada</div>
     <div class="badges">
       <span class="badge">Python 3.12</span>
       <span class="badge">scikit-learn</span>
@@ -285,35 +314,26 @@ html = f"""<!DOCTYPE html>
 <section>
   <h2>Resumen Ejecutivo</h2>
   <p>
-    Este proyecto presenta un pipeline completo de <strong>machine learning para la predicción de riesgo crediticio</strong>,
-    utilizando el dataset público <em>UCI Credit Card Default</em> con 30,000 clientes de tarjetas de crédito en Taiwán.
-    El objetivo es construir un modelo clasificador que identifique clientes con alta probabilidad de incumplimiento
-    (<em>default</em>) en el siguiente mes, una tarea crítica para la gestión de riesgo en instituciones financieras.
+    Este proyecto presenta un pipeline de <strong>machine learning para predicción de riesgo crediticio</strong>
+    con el dataset público <em>UCI Credit Card Default</em>: 30,000 clientes y un objetivo binario
+    de incumplimiento en el mes siguiente. La evaluación corregida separa el test antes de ajustar
+    estadísticas y aplica SMOTE únicamente al entrenamiento de cada fold.
   </p>
   <div class="metric-grid">
-    <div class="metric-card">
-      <div class="value">30,000</div>
-      <div class="label">Clientes analizados</div>
-    </div>
-    <div class="metric-card">
-      <div class="value">22.12%</div>
-      <div class="label">Tasa de default</div>
-    </div>
-    <div class="metric-card">
-      <div class="value">32</div>
-      <div class="label">Features (23 orig. + 9 eng.)</div>
-    </div>
-    <div class="metric-card best">
-      <div class="value">0.7729</div>
-      <div class="label">Mejor AUC (Random Forest)</div>
-    </div>
+    <div class="metric-card"><div class="value">30,000</div><div class="label">Clientes analizados</div></div>
+    <div class="metric-card"><div class="value">22.12%</div><div class="label">Tasa de default</div></div>
+    <div class="metric-card"><div class="value">32</div><div class="label">Variables predictoras</div></div>
+    <div class="metric-card best"><div class="value">{winner_result['test_auc']:.4f}</div>
+      <div class="label">Test AUC ({winner_html})</div></div>
   </div>
   <div class="highlight">
-    <strong>Resultado clave:</strong> El modelo <strong>Random Forest</strong> obtuvo el mejor desempeño en test
-    con un AUC de <strong>0.7729</strong>, coeficiente de Gini de <strong>0.4251</strong> y estadístico KS de
-    <strong>0.4145</strong>, superando los umbrales mínimos de aceptación bancaria (Gini &gt; 0.4, KS &gt; 0.4).
-    El historial de retrasos en pagos (<code>PAY_0</code>) fue identificado como el predictor más importante.
+    <strong>Resultado clave:</strong> {winner_html} fue seleccionado por AUC media de validación cruzada
+    ({winner_result['cv_mean']:.4f} ± {winner_result['cv_std']:.4f}); obtuvo AUC {winner_result['test_auc']:.4f}
+    en test. La brecha CV−test es {winner_result['cv_mean'] - winner_result['test_auc']:.4f}.
+    El umbral {threshold:.2f} se eligió mediante predicciones fuera de fold del entrenamiento.
   </div>
+  <p>El test actual ya se había usado para elegir modelos en la versión anterior. La comparación
+  corregida es informativa, pero requiere datos nuevos para una confirmación independiente.</p>
 </section>
 
 <!-- TABLA DE CONTENIDOS -->
@@ -358,8 +378,7 @@ html = f"""<!DOCTYPE html>
   <h3>Distribución del Target</h3>
   <p>
     El dataset presenta un desbalance de clases moderado: el <strong>22.12%</strong> de los clientes
-    incurrieron en default. Esta proporción es consistente con portfolios de crédito de alto riesgo
-    y justifica el uso de técnicas de balanceo como SMOTE.
+    incurrieron en default. Esta proporción motiva evaluar técnicas para tratar el desbalance, entre ellas SMOTE.
   </p>
   <div class="figure">
     <img src="data:image/png;base64,{figures.get('01_target_distribution', '')}" alt="Distribución del target">
@@ -468,284 +487,182 @@ html = f"""<!DOCTYPE html>
 <!-- 4. PIPELINE -->
 <section id="pipeline">
   <h2>4. Pipeline de Preprocesamiento</h2>
-  <p>El pipeline de preprocesamiento sigue las mejores prácticas de la industria para evitar
-    <em>data leakage</em> y garantizar reproducibilidad:</p>
-
-  <div class="pipeline-step">
-    <div class="step-num">1</div>
-    <div><strong>Train/Test Split (80/20)</strong> — Split estratificado con <code>random_state=42</code>.
-    Resultado: 24,000 train / 6,000 test, manteniendo la tasa de default del 22.12% en ambos sets.</div>
-  </div>
-  <div class="pipeline-step">
-    <div class="step-num">2</div>
-    <div><strong>Imputación</strong> — Valores NaN reemplazados por 0 (el dataset UCI no presenta missing values
-    significativos; esta etapa es defensiva).</div>
-  </div>
-  <div class="pipeline-step">
-    <div class="step-num">3</div>
-    <div><strong>Winsorización (P1-P99)</strong> — Recorte de outliers al percentil 1 y 99 en todas
-    las variables numéricas. Preserva la distribución central mientras controla valores extremos.</div>
-  </div>
-  <div class="pipeline-step">
-    <div class="step-num">4</div>
-    <div><strong>Escalado (StandardScaler)</strong> — Estandarización z-score. Ajustado solo sobre
-    el set de entrenamiento para evitar leakage.</div>
-  </div>
-  <div class="pipeline-step">
-    <div class="step-num">5</div>
-    <div><strong>SMOTE (k=5)</strong> — Oversampling sintético de la clase minoritaria.
-    El set de entrenamiento pasa de 24,000 a <strong>37,382 muestras</strong> con distribución 50/50.
-    Aplicado solo sobre train para no inflar métricas de test.</div>
-  </div>
+  <p>Se separan primero 24,000 clientes para entrenamiento y 6,000 para test. Cada candidato
+  utiliza un <code>imblearn.pipeline.Pipeline</code> con las mismas transformaciones:</p>
+  <div class="pipeline-step"><div class="step-num">1</div>
+    <div><strong>Split 80/20 estratificado</strong> — <code>random_state=42</code>;
+    el test conserva clientes originales y no participa en ajustes o selección.</div></div>
+  <div class="pipeline-step"><div class="step-num">2</div>
+    <div><strong>Imputación</strong> — Los valores faltantes se sustituyen por cero; el paso se ajusta
+    únicamente con el entrenamiento de cada fold.</div></div>
+  <div class="pipeline-step"><div class="step-num">3</div>
+    <div><strong>Winsorización (P1–P99)</strong> — Los límites se aprenden en el entrenamiento del fold
+    y se aplican sin recalcularlos a validación y test.</div></div>
+  <div class="pipeline-step"><div class="step-num">4</div>
+    <div><strong>StandardScaler</strong> — Aprende medias y desviaciones del entrenamiento del fold.</div></div>
+  <div class="pipeline-step"><div class="step-num">5</div>
+    <div><strong>SMOTE (k=5)</strong> — Genera ejemplos sintéticos solo al ajustar con el entrenamiento
+    del fold. Validación y test conservan sus filas originales; el pipeline omite SMOTE al predecir.</div></div>
+  <p>Tras elegir el modelo y el umbral con datos de entrenamiento, el pipeline ganador se vuelve
+  a ajustar con los 24,000 clientes y se evalúa una vez sobre test.</p>
 </section>
 
 <!-- 5. MODELADO -->
 <section id="modelado">
   <h2>5. Modelado y Validación Cruzada</h2>
-  <p>
-    Se entrenaron <strong>4 algoritmos de clasificación</strong> con validación cruzada estratificada
-    de 5 folds sobre el set de entrenamiento balanceado (SMOTE). Las métricas de CV se calculan
-    sobre los folds de entrenamiento, mientras que el Test AUC se evalúa sobre el set de test
-    original (sin balancear) para reflejar el desempeño en condiciones reales.
-  </p>
-
+  <p>Se comparan cuatro clasificadores con <strong>validación estratificada de 5 folds</strong>
+  (<code>shuffle=True</code>, semilla 42). Cada fold reajusta imputación, winsorización,
+  escalado y SMOTE con sus propios clientes de entrenamiento. El AUC se mide en los
+  clientes originales de validación. La selección usa la media de esos cinco AUC.</p>
   <h3>Configuración de Modelos</h3>
   <table>
     <tr><th>Modelo</th><th>Hiperparámetros</th><th>Notas</th></tr>
     <tr><td>Logistic Regression</td><td><code>max_iter=1000, class_weight='balanced'</code></td><td>Baseline lineal</td></tr>
     <tr><td>Random Forest</td><td><code>n_estimators=200, max_depth=10</code></td><td>Ensemble de árboles</td></tr>
     <tr><td>XGBoost</td><td><code>n_estimators=200, max_depth=6, lr=0.1</code></td><td>Gradient boosting</td></tr>
-    <tr><td>LightGBM</td><td><code>n_estimators=200, max_depth=6, lr=0.1</code></td><td>Gradient boosting optimizado</td></tr>
+    <tr><td>LightGBM</td><td><code>n_estimators=200, max_depth=6, lr=0.1</code></td><td>Gradient boosting</td></tr>
   </table>
-
   <h3>Resultados Comparativos</h3>
   <table>
-    <tr><th>Modelo</th><th>CV AUC (5-fold)</th><th>CV Std</th><th>Test AUC</th><th>Gini</th><th>KS</th></tr>
-    <tr><td>Logistic Regression</td><td>0.7671</td><td>0.0046</td><td>0.7450</td><td>0.3816</td><td>0.3929</td></tr>
-    <tr style="background: #d4efdf; font-weight: 600;"><td>Random Forest</td><td>0.8636</td><td>0.0034</td><td>0.7729</td><td>0.4251</td><td>0.4145</td></tr>
-    <tr><td>XGBoost</td><td>0.9301</td><td>0.0020</td><td>0.7607</td><td>0.4061</td><td>0.3954</td></tr>
-    <tr><td>LightGBM</td><td>0.9344</td><td>0.0016</td><td>0.7659</td><td>0.4141</td><td>0.3951</td></tr>
+    <tr><th>Modelo</th><th>CV AUC (5 folds)</th><th>CV Std</th><th>Test AUC</th><th>Gini normalizado</th><th>KS</th></tr>
+    {model_rows}
   </table>
-
+  <p>CV Std describe la variación entre folds; no es un intervalo de confianza.
+  Los AUC de test de los demás modelos son comparaciones descriptivas y no cambiaron la selección.</p>
   <div class="highlight">
-    <strong>Hallazgo importante:</strong> Los modelos de boosting (XGBoost, LightGBM) muestran un CV AUC
-    significativamente más alto (~0.93) que el Test AUC (~0.76), evidenciando <strong>overfitting</strong>
-    al dataset balanceado con SMOTE. Random Forest, con menor CV AUC, generaliza mejor al set de test
-    no balanceado, obteniendo el <strong>mejor Test AUC de 0.7729</strong>. Esto sugiere que Random Forest
-    es más robusto al ruido introducido por las muestras sintéticas de SMOTE.
+    <strong>Por qué cambió la brecha:</strong> En la versión anterior se aplicaba SMOTE a todo train
+    antes de crear los folds. Una muestra original y derivados sintéticos podían quedar en lados
+    opuestos de una partición, y la validación incluía clientes artificiales.
+    El CV histórico de {winner_html} era 0.8636 frente a 0.7729 en test; con el protocolo
+    corregido es {winner_result['cv_mean']:.4f} frente a {winner_result['test_auc']:.4f}.
+    La winsorización y el escalado también cambiaron de alcance, por lo que no es posible
+    atribuir toda la diferencia numérica solo a SMOTE.
   </div>
+  <p><a href="https://imbalanced-learn.org/stable/common_pitfalls.html">
+  Documentación de imbalanced-learn sobre fuga por remuestreo previo a CV</a>.</p>
 </section>
 
 <!-- 6. EVALUACIÓN -->
 <section id="evaluacion">
   <h2>6. Evaluación de Modelos</h2>
-
   <h3>6.1 Curvas ROC</h3>
-  <p>
-    Las curvas ROC muestran que <strong>Random Forest</strong> domina en la región de interés
-    para scoring crediticio (baja tasa de falsos positivos). Todos los modelos superan
-    significativamente la línea de azar, confirmando capacidad predictiva real.
-  </p>
-  <div class="figure">
-    <img src="data:image/png;base64,{figures.get('06_roc_curves', '')}" alt="Curvas ROC">
-    <div class="caption">Figura 6: Curvas ROC para los 4 modelos. Random Forest (AUC=0.7729) lidera en el set de test.</div>
-  </div>
-
+  <p>Las curvas muestran el desempeño descriptivo de los cuatro pipelines en el test original.
+  El ganador ya se había seleccionado por CV.</p>
+  <div class="figure"><img src="data:image/png;base64,{figures['06_roc_curves']}" alt="Curvas ROC">
+    <div class="caption">Figura 6: curvas ROC en test; {winner_html} obtuvo AUC {winner_result['test_auc']:.4f}.</div></div>
   <h3>6.2 Curvas Precision-Recall</h3>
-  <p>
-    Dado el desbalance de clases (22% positivos), las curvas Precision-Recall proporcionan una visión
-    más informativa que ROC. Random Forest mantiene el mejor balance precision-recall en la región
-    de alto recall, crucial para la detección de defaulters.
-  </p>
-  <div class="figure">
-    <img src="data:image/png;base64,{figures.get('07_pr_curves', '')}" alt="Curvas PR">
-    <div class="caption">Figura 7: Curvas Precision-Recall. Random Forest muestra el mayor Average Precision.</div>
-  </div>
-
-  <h3>6.3 Matriz de Confusión (Random Forest)</h3>
-  <p>
-    Con el threshold por defecto (0.5), Random Forest clasifica correctamente el 77% de los casos.
-    El modelo prioriza la detección de defaulters (recall del 59%) a costa de algunos falsos positivos,
-    un trade-off aceptable en contexto bancario donde el costo de no detectar un defaulter es mayor
-    que el de rechazar un cliente solvente.
-  </p>
+  <p>Estas curvas complementan el AUC ROC para el objetivo con 22.12% de casos positivos.</p>
+  <div class="figure"><img src="data:image/png;base64,{figures['07_pr_curves']}" alt="Curvas Precision-Recall">
+    <div class="caption">Figura 7: precisión y recall en clientes originales de test.</div></div>
+  <h3>6.3 Matriz de Confusión ({winner_html})</h3>
+  <p>Con el umbral {threshold:.2f}, fijado en entrenamiento mediante predicciones fuera de fold,
+  se observan {tp} verdaderos positivos, {fn} falsos negativos, {fp} falsos positivos
+  y {tn} verdaderos negativos en test.</p>
   <div class="two-col">
-    <div class="figure" style="margin: 0;">
-      <img src="data:image/png;base64,{figures.get('08_confusion_matrix', '')}" alt="Matriz de confusión">
-      <div class="caption">Figura 8: Matriz de confusión del mejor modelo.</div>
-    </div>
-    <div style="display: flex; align-items: center;">
-      <table>
-        <tr><th>Métrica</th><th>No Default</th><th>Default</th></tr>
-        <tr><td>Precision</td><td>0.88</td><td>0.49</td></tr>
-        <tr><td>Recall</td><td>0.83</td><td>0.59</td></tr>
-        <tr><td>F1-Score</td><td>0.85</td><td>0.53</td></tr>
-        <tr><td colspan="3" style="text-align:center;"><strong>Accuracy: 0.77</strong></td></tr>
-      </table>
-    </div>
+    <div class="figure" style="margin: 0;"><img src="data:image/png;base64,{figures['08_confusion_matrix']}" alt="Matriz de confusión">
+      <div class="caption">Figura 8: matriz de confusión con el umbral seleccionado en train.</div></div>
+    <div style="display: flex; align-items: center;"><table>
+      <tr><th>Métrica</th><th>No Default</th><th>Default</th></tr>
+      <tr><td>Precision</td><td>{negative_precision:.4f}</td><td>{best['precision']:.4f}</td></tr>
+      <tr><td>Recall</td><td>{negative_recall:.4f}</td><td>{best['recall']:.4f}</td></tr>
+      <tr><td>F1-Score</td><td>{negative_f1:.4f}</td><td>{best['f1']:.4f}</td></tr>
+      <tr><td colspan="3" style="text-align:center;"><strong>Accuracy: {accuracy:.4f}</strong></td></tr>
+    </table></div>
   </div>
-
-  <h3>6.4 Análisis de Threshold</h3>
-  <p>
-    El análisis de threshold revela que el <strong>umbral óptimo (max F1) es 0.55</strong>,
-    ligeramente superior al default de 0.5. Esto es consistente con un escenario donde se busca
-    un balance entre detectar defaulters sin generar excesivos falsos positivos. En un contexto
-    bancario real, el threshold se calibraría según la <strong>apetencia de riesgo</strong> de la
-    institución: un threshold más bajo (0.40) maximizaría el recall para políticas conservadoras,
-    mientras que uno más alto (0.65) optimizaría la precisión para políticas agresivas de colocación.
-  </p>
-  <div class="figure">
-    <img src="data:image/png;base64,{figures.get('09_threshold_analysis', '')}" alt="Análisis de threshold">
-    <div class="caption">Figura 9: Precision, Recall y F1 en función del threshold de decisión. El óptimo F1 se alcanza en 0.55.</div>
-  </div>
-
-  <h3>6.5 Métricas Bancarias</h3>
+  <h3>6.4 Análisis de Umbral</h3>
+  <p>Se probaron umbrales de 0.10 a 0.85 en incrementos de 0.05. El máximo F1
+  de las predicciones <strong>fuera de fold del entrenamiento</strong> se alcanzó en {threshold:.2f}.
+  Su elección no utilizó las etiquetas de test.</p>
+  <div class="figure"><img src="data:image/png;base64,{figures['09_threshold_analysis']}" alt="Análisis de umbral">
+    <div class="caption">Figura 9: precisión, recall y F1 fuera de fold usados para elegir el umbral.</div></div>
+  <h3>6.5 Gini y KS</h3>
   <div class="metric-grid">
-    <div class="metric-card best">
-      <div class="value">0.4251</div>
-      <div class="label">Gini (Random Forest)</div>
-    </div>
-    <div class="metric-card best">
-      <div class="value">0.4145</div>
-      <div class="label">KS (Random Forest)</div>
-    </div>
-    <div class="metric-card">
-      <div class="value">0.4141</div>
-      <div class="label">Gini (LightGBM)</div>
-    </div>
-    <div class="metric-card">
-      <div class="value">0.3954</div>
-      <div class="label">KS (XGBoost)</div>
-    </div>
+    <div class="metric-card best"><div class="value">{winner_result['gini']:.4f}</div><div class="label">Gini normalizado ({winner_html})</div></div>
+    <div class="metric-card best"><div class="value">{winner_result['ks']:.4f}</div><div class="label">KS ({winner_html})</div></div>
+    <div class="metric-card"><div class="value">{winner_result['cv_mean']:.4f}</div><div class="label">AUC medio CV</div></div>
+    <div class="metric-card"><div class="value">{winner_result['test_auc']:.4f}</div><div class="label">AUC test</div></div>
   </div>
-  <p>
-    En la industria bancaria, un modelo de credit scoring se considera <strong>aceptable</strong>
-    cuando el coeficiente de Gini supera 0.40 y el estadístico KS supera 0.30. Random Forest
-    cumple ambos criterios (Gini = 0.4251, KS = 0.4145), lo que lo posiciona como un modelo
-    viable para implementación en un entorno productivo.
-  </p>
+  <p>Gini normalizado = 2 × AUC − 1. Estas métricas por sí solas no acreditan
+  aptitud para decisiones bancarias o despliegue.</p>
 </section>
 
 <!-- 7. SHAP -->
 <section id="shap">
   <h2>7. Interpretabilidad con SHAP</h2>
-  <p>
-    La interpretabilidad es un requisito regulatorio y de negocio en modelos de riesgo crediticio.
-    Se utiliza <strong>SHAP (SHapley Additive exPlanations)</strong> para descomponer las predicciones
-    del modelo en contribuciones individuales de cada feature, proporcionando transparencia tanto
-    a nivel global como individual.
-  </p>
-
-  <h3>7.1 Importancia Global de Features</h3>
-  <p>
-    El SHAP summary plot revela las <strong>5 variables más influyentes</strong> en la predicción de default:
-  </p>
-  <ol style="margin: 12px 0 12px 24px;">
-    <li><strong>PAY_0</strong> — Estado de pago del mes actual (el predictor dominante)</li>
-    <li><strong>LIMIT_BAL</strong> — Límite de crédito asignado</li>
-    <li><strong>avg_delay</strong> — Retraso promedio (feature engineered)</li>
-    <li><strong>BILL_AMT1</strong> — Factura del mes actual</li>
-    <li><strong>credit_util</strong> — Utilización de crédito (feature engineered)</li>
-  </ol>
-  <div class="figure">
-    <img src="data:image/png;base64,{figures.get('10_shap_summary', '')}" alt="SHAP Summary">
-    <div class="caption">Figura 10: SHAP Summary Plot. Cada punto es una predicción individual. El color indica el valor del feature (rojo=alto, azul=bajo) y la posición horizontal el impacto en la predicción.</div>
-  </div>
-
-  <div class="figure">
-    <img src="data:image/png;base64,{figures.get('11_shap_bar', '')}" alt="SHAP Bar">
-    <div class="caption">Figura 11: Ranking de importancia global por valor absoluto medio de SHAP. PAY_0 domina con amplia diferencia.</div>
-  </div>
-
+  <p>SHAP explica el <strong>estimador ganador por CV ({winner_html})</strong> después de aplicar
+  los transformadores ya ajustados del pipeline. No vuelve a ajustar el preprocesamiento
+  y no aplica SMOTE al test. Las figuras usan una muestra reproducible de
+  {shap_metadata['sample_size']} clientes originales de test. Las contribuciones describen
+  el comportamiento del modelo y no efectos causales.</p>
+  <h3>7.1 Importancia Global de Variables</h3>
+  <p><code>PAY_0</code> mantiene la mayor importancia media. Entre las variables derivadas
+  destacan <code>max_delay</code>, <code>total_delay_months</code> y <code>avg_delay</code>.
+  Las cifras no prueban que añadirlas mejorara el rendimiento, pues no se hizo una
+  comparación sin esas variables.</p>
+  <div class="figure"><img src="data:image/png;base64,{figures['10_shap_summary']}" alt="SHAP Summary">
+    <div class="caption">Figura 10: impacto de variables sobre la predicción en la muestra de test.</div></div>
+  <div class="figure"><img src="data:image/png;base64,{figures['11_shap_bar']}" alt="SHAP Bar">
+    <div class="caption">Figura 11: importancia global por valor absoluto medio de SHAP.</div></div>
   <h3>7.2 Análisis de Dependencia</h3>
-  <p>
-    Los plots de dependencia de SHAP muestran cómo el valor de cada feature afecta la predicción:
-  </p>
-  <ul style="margin: 12px 0 12px 24px;">
-    <li><strong>PAY_0:</strong> Valores positivos (retrasos) incrementan drásticamente la probabilidad de default.
-    El punto de inflexión se ubica entre PAY_0 = 0 y PAY_0 = 1.</li>
-    <li><strong>LIMIT_BAL:</strong> Límites bajos se asocian con mayor riesgo. El efecto se estabiliza por encima de 200,000 NT$.</li>
-    <li><strong>credit_util:</strong> Alta utilización (&gt; 0.75) incrementa significativamente el riesgo.</li>
-  </ul>
-  <div class="figure">
-    <img src="data:image/png;base64,{figures.get('12_shap_dependence', '')}" alt="SHAP Dependence">
-    <div class="caption">Figura 12: SHAP Dependence Plots para las 3 features más importantes. Se observa la relación no-lineal entre cada feature y su contribución a la predicción.</div>
-  </div>
-
+  <p>Los gráficos muestran la variación de la contribución de <code>PAY_0</code>,
+  <code>LIMIT_BAL</code> y <code>credit_util</code> según su valor.
+  El eje de variables refleja la escala transformada usada por el clasificador.</p>
+  <div class="figure"><img src="data:image/png;base64,{figures['12_shap_dependence']}" alt="SHAP Dependence">
+    <div class="caption">Figura 12: dependencia de tres variables del modelo seleccionado.</div></div>
   <h3>7.3 Explicación Individual</h3>
-  <p>
-    El waterfall plot permite explicar predicciones individuales, mostrando cómo cada feature
-    contribuye a mover la predicción desde el valor base (prevalencia de la clase) hasta la
-    probabilidad final. Esto es fundamental para la <strong>transparencia regulatoria</strong>:
-    cada decisión de crédito puede ser explicada al cliente y al regulador.
-  </p>
-  <div class="figure">
-    <img src="data:image/png;base64,{figures.get('13_shap_waterfall', '')}" alt="SHAP Waterfall">
-    <div class="caption">Figura 13: Waterfall plot para una predicción individual. Las barras rojas incrementan la probabilidad de default, las azules la reducen.</div>
-  </div>
-
-  <div class="figure">
-    <img src="data:image/png;base64,{figures.get('14_shap_force', '')}" alt="SHAP Force">
-    <div class="caption">Figura 14: Force plot mostrando la contribución de cada feature a la predicción final de un cliente específico.</div>
-  </div>
+  <p>Los gráficos de cascada y fuerza descomponen la predicción de un cliente
+  de la muestra. Para este Random Forest, las contribuciones se expresan en la
+  escala de salida del estimador mostrada en el gráfico.</p>
+  <div class="figure"><img src="data:image/png;base64,{figures['13_shap_waterfall']}" alt="SHAP Waterfall">
+    <div class="caption">Figura 13: contribuciones a una predicción individual.</div></div>
+  <div class="figure"><img src="data:image/png;base64,{figures['14_shap_force']}" alt="SHAP Force">
+    <div class="caption">Figura 14: representación alternativa de la misma predicción.</div></div>
 </section>
 
 <!-- 8. CONCLUSIONES -->
 <section id="conclusiones">
   <h2>8. Conclusiones y Recomendaciones</h2>
-
   <h3>Hallazgos Principales</h3>
   <ol style="margin: 12px 0 12px 24px;">
-    <li><strong>El historial de pagos es el predictor dominante.</strong> <code>PAY_0</code> (retraso del mes actual)
-    concentra la mayor parte del poder predictivo, con una correlación de 0.325 con el target y el mayor
-    valor SHAP absoluto. Esto es consistente con la literatura de credit scoring.</li>
-    <li><strong>Random Forest generaliza mejor que boosting.</strong> A pesar de que XGBoost y LightGBM
-    muestran CV AUC superiores (~0.93), Random Forest logra el mejor Test AUC (0.7729), sugiriendo
-    mayor robustez al overfitting inducido por SMOTE.</li>
-    <li><strong>Las features engineered aportan valor.</strong> <code>avg_delay</code> y <code>credit_util</code>
-    aparecen entre los top-5 predictores SHAP, validando la estrategia de ingeniería de features.</li>
-    <li><strong>El modelo cumple estándares bancarios.</strong> Gini = 0.4251 y KS = 0.4145 superan
-    los umbrales de aceptación (Gini &gt; 0.4, KS &gt; 0.3).</li>
-    <li><strong>SHAP proporciona interpretabilidad regulatoria.</strong> Cada predicción puede ser
-    descompuesta en contribuciones de features, cumpliendo con requisitos de explicabilidad.</li>
+    <li><strong>Se corrigió una fuga de información en CV.</strong> El SMOTE histórico
+    se aplicaba antes de crear los folds; ahora solo actúa en el entrenamiento de cada fold.</li>
+    <li><strong>{winner_html} fue elegido por CV.</strong> Su AUC medio es
+    {winner_result['cv_mean']:.4f} ± {winner_result['cv_std']:.4f}, y en test obtuvo
+    {winner_result['test_auc']:.4f}. La brecha es {winner_result['cv_mean'] - winner_result['test_auc']:.4f}.</li>
+    <li><strong>Se corrigieron otras fuentes de fuga.</strong> Los percentiles de winsorización
+    se aprenden después del split; el escalado se ajusta dentro de CV.</li>
+    <li><strong>El historial de pagos domina la explicación del modelo.</strong>
+    Los gráficos SHAP corregidos corresponden al ganador y usan su preprocesamiento ajustado.</li>
   </ol>
-
   <h3>Limitaciones</h3>
   <ul style="margin: 12px 0 12px 24px;">
-    <li><strong>Overfitting en boosting:</strong> La brecha CV-Test de ~0.17 en XGBoost/LightGBM indica
-    que SMOTE introduce ruido que estos modelos sobreajustan. Se recomienda explorar técnicas alternativas
-    como class weights o undersampling.</li>
-    <li><strong>Datos de 2005:</strong> El dataset tiene casi 20 años. Los patrones de comportamiento
-    crediticio pueden haber evolucionado significativamente.</li>
-    <li><strong>Sin tuning exhaustivo:</strong> Los hiperparámetros se configuraron con valores razonables
-    pero no se realizó búsqueda sistemática (GridSearch/Optuna).</li>
-    <li><strong>Recall de default limitado:</strong> El recall del 59% para la clase default significa
-    que el 41% de los defaulters no son detectados. En un entorno real, esto requeriría optimización
-    del threshold y posiblemente un modelo de costo asimétrico.</li>
+    <li><strong>Test históricamente reutilizado:</strong> La versión anterior seleccionó
+    decisiones mirando el test. Se necesitan datos nuevos para confirmar el rendimiento de forma independiente.</li>
+    <li><strong>Atribución de la brecha:</strong> SMOTE, winsorización y escalado se corrigieron
+    juntos. Esta ejecución no mide la contribución aislada de cada cambio.</li>
+    <li><strong>Datos de 2005:</strong> Su antigüedad limita la extrapolación a clientes actuales.</li>
+    <li><strong>Modelo sin validación operativa:</strong> No se evaluaron calibración, estabilidad
+    temporal, equidad, costos de decisión ni requisitos aplicables a una entidad concreta.</li>
   </ul>
-
   <h3>Próximos Pasos</h3>
   <ul style="margin: 12px 0 12px 24px;">
-    <li>Implementar <strong>Optuna</strong> para búsqueda bayesiana de hiperparámetros</li>
-    <li>Explorar <strong>ensamble ponderado</strong> de Random Forest + LightGBM</li>
-    <li>Evaluar <strong>cost-sensitive learning</strong> con matriz de costos bancaria real</li>
-    <li>Implementar <strong>monitoreo de drift</strong> para despliegue en producción</li>
-    <li>Construir <strong>scorecard</strong> calibrado (escala 300-850 tipo FICO)</li>
+    <li>Confirmar el pipeline y el umbral fijados con datos nuevos no usados en decisiones previas.</li>
+    <li>Evaluar calibración de probabilidades y costos de falsos positivos y negativos.</li>
+    <li>Comprobar estabilidad por periodo y segmento antes de cualquier uso operativo.</li>
   </ul>
 </section>
 
 <footer>
   <p>Proyecto de Riesgo Crediticio &middot; Python 3.12 + scikit-learn + XGBoost + LightGBM + SHAP</p>
-  <p>Dataset: <a href="https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients">UCI Credit Card Default</a> &middot; Generado en Junio 2026</p>
+  <p>Dataset: <a href="https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients">UCI Credit Card Default</a>
+  &middot; Métricas: <code>models/evaluation_metrics.json</code></p>
 </footer>
-
 </div>
 </body>
 </html>"""
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT.write_text(html, encoding="utf-8")
+    print(f"Report generated: {OUTPUT}")
 
-os.makedirs("reports", exist_ok=True)
-with open(OUTPUT, "w", encoding="utf-8") as f:
-    f.write(html)
-
-print(f"Report generated: {OUTPUT}")
-print(f"Size: {OUTPUT.stat().st_size / 1024:.1f} KB")
+if __name__ == "__main__":
+    generate_report()

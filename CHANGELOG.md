@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Fit winsorization, scaling, and SMOTE inside each cross-validation fold using an imbalanced-learn pipeline.
+- Select the model by CV AUC and the decision threshold using training out-of-fold predictions, without test-based selection.
+- Serialize complete pipelines and explain the selected estimator with its fitted preprocessing in SHAP.
+- Replace hard-coded report scores with measured results and explain the historical leakage and reused-test limitation.
+- Report normalized Gini as `2 * AUC - 1`, consistent with the existing utility function.
+
+### Added
+- Regression checks for fold isolation, original validation row counts, and pipeline serialization.
+
 ## [0.1.0] - 2026-06-07
 
 ### Added
